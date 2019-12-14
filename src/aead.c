@@ -168,13 +168,13 @@ aead_cipher_encrypt(cipher_ctx_t *cipher_ctx,
     switch (cipher_ctx->cipher->method) {
     case AES256GCM: // Only AES-256-GCM is supported by libsodium.
         if (cipher_ctx->aes256gcm_ctx != NULL) { // Use it if availble
-            err =  crypto_aead_aes256gcm_encrypt_afternm(c, &long_clen, m, mlen,
-                                          ad, adlen, NULL, n,
-                                          (const aes256gcm_ctx *)cipher_ctx->aes256gcm_ctx);
+            err = crypto_aead_aes256gcm_encrypt_afternm(c, &long_clen, m, mlen,
+                                                        ad, adlen, NULL, n,
+                                                        (const aes256gcm_ctx *)cipher_ctx->aes256gcm_ctx);
             *clen = (size_t)long_clen; // it's safe to cast 64bit to 32bit length here
             break;
         }
-        // Otherwise, just use the mbedTLS one with crappy AES-NI.
+    // Otherwise, just use the mbedTLS one with crappy AES-NI.
     case AES192GCM:
     case AES128GCM:
 
@@ -218,12 +218,12 @@ aead_cipher_decrypt(cipher_ctx_t *cipher_ctx,
     case AES256GCM: // Only AES-256-GCM is supported by libsodium.
         if (cipher_ctx->aes256gcm_ctx != NULL) { // Use it if availble
             err = crypto_aead_aes256gcm_decrypt_afternm(p, &long_plen, NULL, m, mlen,
-                                          ad, adlen, n,
-                                          (const aes256gcm_ctx *)cipher_ctx->aes256gcm_ctx);
+                                                        ad, adlen, n,
+                                                        (const aes256gcm_ctx *)cipher_ctx->aes256gcm_ctx);
             *plen = (size_t)long_plen; // it's safe to cast 64bit to 32bit length here
             break;
         }
-        // Otherwise, just use the mbedTLS one with crappy AES-NI.
+    // Otherwise, just use the mbedTLS one with crappy AES-NI.
     case AES192GCM:
     case AES128GCM:
         err = mbedtls_cipher_auth_decrypt(cipher_ctx->evp, n, nlen, ad, adlen,
@@ -244,6 +244,12 @@ aead_cipher_decrypt(cipher_ctx_t *cipher_ctx,
     default:
         return CRYPTO_ERROR;
     }
+
+    // The success return value ln libsodium and mbedTLS are both 0
+    if (err != 0)
+        // Although we never return any library specific value in the caller,
+        // here we still set the error code to CRYPTO_ERROR to avoid confusion.
+        err = CRYPTO_ERROR;
 
     return err;
 }
@@ -335,7 +341,7 @@ aead_cipher_ctx_init(cipher_ctx_t *cipher_ctx, int method, int enc)
         memset(cipher_ctx->aes256gcm_ctx, 0, sizeof(aes256gcm_ctx));
     } else {
         cipher_ctx->aes256gcm_ctx = NULL;
-        cipher_ctx->evp = ss_malloc(sizeof(cipher_evp_t));
+        cipher_ctx->evp           = ss_malloc(sizeof(cipher_evp_t));
         memset(cipher_ctx->evp, 0, sizeof(cipher_evp_t));
         cipher_evp_t *evp = cipher_ctx->evp;
         mbedtls_cipher_init(evp);
@@ -348,7 +354,6 @@ aead_cipher_ctx_init(cipher_ctx_t *cipher_ctx, int method, int enc)
         LOGE("Cipher %s not found in mbed TLS library", ciphername);
         FATAL("Cannot initialize mbed TLS cipher");
     }
-
 
 #ifdef SS_DEBUG
     dump("KEY", (char *)cipher_ctx->cipher->key, cipher_ctx->cipher->key_len);
@@ -591,7 +596,7 @@ aead_chunk_decrypt(cipher_ctx_t *ctx, uint8_t *p, uint8_t *c, uint8_t *n,
         return CRYPTO_ERROR;
     assert(*plen == CHUNK_SIZE_LEN);
 
-    mlen = ntohs(*(uint16_t *)len_buf);
+    mlen = load16_be(len_buf);
     mlen = mlen & CHUNK_SIZE_MASK;
 
     if (mlen == 0)
